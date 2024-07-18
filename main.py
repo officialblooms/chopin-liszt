@@ -1,21 +1,24 @@
 import discord
 import aiohttp
 import os
-from io import BytesIO
-from PIL import Image
 import google.generativeai as genai
+from googleapiclient.discovery import build
 
 import random
 
 # sets up Discord client 
 client = discord.Client(intents=discord.Intents.all())
 
-# sets up Gemini
-with open('geminikey.txt', 'r') as file:
-    GEMINI_API_KEY = file.read()
 
-genai.configure(api_key=GEMINI_API_KEY)
+with open('googlecloudkey.txt', 'r') as file:
+    GOOGLE_CLOUD_KEY = file.read()
+    
+# sets up Gemini
+genai.configure(api_key=GOOGLE_CLOUD_KEY)
 model = genai.GenerativeModel('models/gemini-pro')
+
+# sets up Youtube API
+youtube = build('youtube', 'v3', developerKey=GOOGLE_CLOUD_KEY)
 
 @client.event
 async def on_ready():
@@ -33,9 +36,9 @@ async def on_message(message):
         return
     
     # follow-up prompt for a previously-requested command
-    if (waiting_for_response):
+    if waiting_for_response:
         number = random.randint(1, 9)
-        if (message.content.startswith(str(number))):
+        if message.content.startswith(str(number)):
             await message.channel.send('You guessed right!')
         else:
             await message.channel.send('You guessed wrong! My number was ' + str(number))
@@ -89,6 +92,24 @@ async def on_message(message):
         
         
         await message.channel.send(answer)
+        
+    # searches for a random OfficialBlooms youtube video
+    if message.content.startswith('$officialblooms'):
+        try:
+            response = youtube.search().list(
+                part='snippet',
+                channelId='UCuidePcDLDdc_RNsP7DgvLw',
+                maxResults=50,
+                order='date'
+            ).execute()
+            
+            videos = response['items']
+            random_video = random.choice(videos)
+            video_url = f"https://www.youtube.com/watch?v={random_video['id']['videoId']}"
+            
+            await message.channel.send(f"Here's a random video from OfficialBlooms: {video_url}")
+        except Exception as e:
+            await message.channel.send(f"An error occurred: {e}")
             
         
 with open('bottoken.txt', 'r') as file:
