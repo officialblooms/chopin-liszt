@@ -1,3 +1,5 @@
 venv
 googlecloudkey.txt
 bottoken.txt
+spotifysecret.txt
+.cache

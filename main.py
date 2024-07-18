@@ -3,6 +3,8 @@ import aiohttp
 import os
 import google.generativeai as genai
 from googleapiclient.discovery import build
+from spotipy.oauth2 import SpotifyClientCredentials
+import spotipy 
 
 import random
 
@@ -19,6 +21,17 @@ model = genai.GenerativeModel('models/gemini-pro')
 
 # sets up Youtube API
 youtube = build('youtube', 'v3', developerKey=GOOGLE_CLOUD_KEY)
+
+# sets up Spotify API
+
+SPOTIFY_CLIENT_ID = '571cdd92da0446afbcad9a37d80edbf7'
+
+with open('spotifysecret.txt', 'r') as file:
+    SPOTIFY_CLIENT_SECRET = file.read()
+
+spotify = spotipy.Spotify(auth_manager=SpotifyClientCredentials(client_id=SPOTIFY_CLIENT_ID, client_secret=SPOTIFY_CLIENT_SECRET))   
+
+
 
 @client.event
 async def on_ready():
@@ -96,11 +109,11 @@ async def on_message(message):
     # searches for a random OfficialBlooms youtube video
     if message.content.startswith('$officialblooms'):
         try:
+            # gets 50 random videos
             response = youtube.search().list(
                 part='snippet',
                 channelId='UCuidePcDLDdc_RNsP7DgvLw',
                 maxResults=50,
-                order='date'
             ).execute()
             
             videos = response['items']
@@ -111,6 +124,31 @@ async def on_message(message):
         except Exception as e:
             await message.channel.send(f"An error occurred: {e}")
             
+    # sends a random beatles song on Spotify
+    if message.content.startswith('$beatles'):
+        try:
+            # print list of song names by beatles
+            song_list = [track['track'] for track in spotify.playlist_items(playlist_id="0rWlHb2uqgRv6bTXEiFcZY", fields="items(track)")['items']]
+            
+            random_track = random.choice(song_list)
+            track_url = random_track['external_urls']['spotify']
+            
+            await message.channel.send(f"Here's a random song from Beatles: {track_url}")
+        except Exception as e:
+            await message.channel.send(f"An error occurred: {e}")
+            
+    # sends a random Bach song on Spotify
+    if message.content.startswith('$bach'):
+        try:
+            # print list of song names by beatles
+            song_list = [track['track'] for track in spotify.playlist_items(playlist_id="26YOxTFXweeLYW842QDtTv", fields="items(track)")['items']]
+            
+            random_track = random.choice(song_list)
+            track_url = random_track['external_urls']['spotify']
+            
+            await message.channel.send(f"Here's a random song from Bach: {track_url}")
+        except Exception as e:
+            await message.channel.send(f"An error occurred: {e}")
         
 with open('bottoken.txt', 'r') as file:
     client.run(file.read())
