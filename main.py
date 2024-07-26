@@ -31,7 +31,14 @@ with open('spotifysecret.txt', 'r') as file:
 
 spotify = spotipy.Spotify(auth_manager=SpotifyClientCredentials(client_id=SPOTIFY_CLIENT_ID, client_secret=SPOTIFY_CLIENT_SECRET))   
 
-
+# store all songs from a given playlist
+def extract_songs(playlist_id, offset=0):
+    song_list = []
+    leftover_songs = [track['track'] for track in spotify.playlist_items(playlist_id=playlist_id, fields="items(track)", offset=offset)['items']]
+    if (len(leftover_songs) > 0):
+        song_list = leftover_songs
+        song_list.extend(extract_songs(playlist_id, offset + 100))
+    return song_list
 
 @client.event
 async def on_ready():
@@ -39,10 +46,14 @@ async def on_ready():
     print('We have logged in as {0.user}'.format(client))
 
 waiting_for_response = False
+random_number = False # random number game
+playlist_url = False # spotify playlist url
+
 
 @client.event
 async def on_message(message):
-    global waiting_for_response
+    
+    global waiting_for_response, random_number, playlist_url
     
     # ensures the bot doesn't respond to itself
     if message.author == client.user:
@@ -50,17 +61,40 @@ async def on_message(message):
     
     # follow-up prompt for a previously-requested command
     if waiting_for_response:
-        number = random.randint(1, 9)
-        if message.content.startswith(str(number)):
-            await message.channel.send('You guessed right!')
-        else:
-            await message.channel.send('You guessed wrong! My number was ' + str(number))
         waiting_for_response = False
+        if (random_number):
+            number = random.randint(1, 9)
+            if message.content.startswith(str(number)):
+                await message.channel.send('You guessed right!')
+            else:
+                await message.channel.send('You guessed wrong! My number was ' + str(number))
+            random_number = False    
+        elif (playlist_url):
+            playlist_id = message.content.split('playlist/')[1].split('?')[0]
+            try:
+                song_list = extract_songs(playlist_id)
     
+                print(len(song_list))
+                if (len(song_list) == 0):
+                    await message.channel.send("No songs found in the playlist")
+                    return
+                
+                random_track = random.choice(song_list)
+                track_url = random_track['external_urls']['spotify']
+                
+                await message.channel.send(f"Here's a random song from your playlist: {track_url}")
+            except Exception as e:
+                await message.channel.send(f"An error occurred: {e}")
+            playlist_url = False
+            # TODO: allow user to choose another song from playlist by typing "next"
+        
+            
+        
     # random number game
     if message.content.startswith('$randomnumber'):
         await message.channel.send('guess a random number between 1 and 9')
         waiting_for_response = True
+        random_number = True
         
     # shows random pictures of cats
     if message.content.startswith('$cat'):
@@ -127,9 +161,7 @@ async def on_message(message):
     # sends a random beatles song on Spotify
     if message.content.startswith('$beatles'):
         try:
-            # print list of song names by beatles
-            song_list = [track['track'] for track in spotify.playlist_items(playlist_id="0rWlHb2uqgRv6bTXEiFcZY", fields="items(track)")['items']]
-            
+            song_list = extract_songs('0rWlHb2uqgRv6bTXEiFcZY')
             random_track = random.choice(song_list)
             track_url = random_track['external_urls']['spotify']
             
@@ -137,18 +169,11 @@ async def on_message(message):
         except Exception as e:
             await message.channel.send(f"An error occurred: {e}")
             
-    # sends a random Bach song on Spotify
-    if message.content.startswith('$bach'):
-        try:
-            # print list of song names by beatles
-            song_list = [track['track'] for track in spotify.playlist_items(playlist_id="26YOxTFXweeLYW842QDtTv", fields="items(track)")['items']]
-            
-            random_track = random.choice(song_list)
-            track_url = random_track['external_urls']['spotify']
-            
-            await message.channel.send(f"Here's a random song from Bach: {track_url}")
-        except Exception as e:
-            await message.channel.send(f"An error occurred: {e}")
+    # sends a random song on a provided playlist on Spotify
+    if message.content.startswith('$playlist'):
+        await message.channel.send("Please provide a playlist URL")
+        waiting_for_response = True
+        playlist_url = True
         
 with open('bottoken.txt', 'r') as file:
     client.run(file.read())
