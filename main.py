@@ -70,21 +70,24 @@ async def on_message(message):
                 await message.channel.send('You guessed wrong! My number was ' + str(number))
             random_number = False    
         elif (playlist_url):
+            if (not(message.content.startswith('https://open.spotify.com/playlist/'))):
+                await message.channel.send("Invalid playlist URL")
+                return
             playlist_id = message.content.split('playlist/')[1].split('?')[0]
-            try:
-                song_list = extract_songs(playlist_id)
-    
-                print(len(song_list))
-                if (len(song_list) == 0):
-                    await message.channel.send("No songs found in the playlist")
-                    return
-                
-                random_track = random.choice(song_list)
-                track_url = random_track['external_urls']['spotify']
-                
-                await message.channel.send(f"Here's a random song from your playlist: {track_url}")
-            except Exception as e:
-                await message.channel.send(f"An error occurred: {e}")
+            async with message.channel.typing():
+                try:
+                    song_list = extract_songs(playlist_id)
+        
+                    if (len(song_list) == 0):
+                        await message.channel.send("No songs found in the playlist")
+                        return
+                    
+                    random_track = random.choice(song_list)
+                    track_url = random_track['external_urls']['spotify']
+                    
+                    await message.channel.send(f"Here's a random song from your playlist: {track_url}")
+                except Exception as e:
+                    await message.channel.send(f"An error occurred: {e}")
             playlist_url = False
             # TODO: allow user to choose another song from playlist by typing "next"
         
@@ -160,14 +163,15 @@ async def on_message(message):
             
     # sends a random beatles song on Spotify
     if message.content.startswith('$beatles'):
-        try:
-            song_list = extract_songs('0rWlHb2uqgRv6bTXEiFcZY')
-            random_track = random.choice(song_list)
-            track_url = random_track['external_urls']['spotify']
-            
-            await message.channel.send(f"Here's a random song from Beatles: {track_url}")
-        except Exception as e:
-            await message.channel.send(f"An error occurred: {e}")
+        async with message.channel.typing():
+            try:
+                song_list = extract_songs('0rWlHb2uqgRv6bTXEiFcZY')
+                random_track = random.choice(song_list)
+                track_url = random_track['external_urls']['spotify']
+                
+                await message.channel.send(f"Here's a random song from Beatles: {track_url}")
+            except Exception as e:
+                await message.channel.send(f"An error occurred: {e}")
             
     # sends a random song on a provided playlist on Spotify
     if message.content.startswith('$playlist'):
