@@ -31,6 +31,21 @@ with open('spotifysecret.txt', 'r') as file:
 
 spotify = spotipy.Spotify(auth_manager=SpotifyClientCredentials(client_id=SPOTIFY_CLIENT_ID, client_secret=SPOTIFY_CLIENT_SECRET))   
 
+# get a random song's URL from a given playlist
+def get_random_song(playlist_id):
+    try:
+        song_list = extract_songs(playlist_id)
+        
+        if (len(song_list) == 0):
+            return "No songs found in the playlist."
+                    
+        random_track = random.choice(song_list)
+        track_url = random_track['external_urls']['spotify']
+                    
+        return track_url
+    except Exception as e:
+        return "An error has occurred: " + e
+
 # store all songs from a given playlist
 def extract_songs(playlist_id, offset=0):
     song_list = []
@@ -56,8 +71,8 @@ number = 0
 random_number_game_hard = False
 number_list = [0, 0, 0, 0, 0]
 
-playlist_url = False # spotify playlist url
-
+# --spotify playlist vars--
+global_playlist_url = ''
 
 @client.event
 async def on_message(message):
@@ -68,7 +83,7 @@ async def on_message(message):
     
     global random_number_game_hard, number_list
     
-    global playlist_url
+    global global_playlist_url
     
     # ensures the bot doesn't respond to itself
     if message.author == client.user:
@@ -76,7 +91,11 @@ async def on_message(message):
     
     # follow-up prompt for a previously-requested command
     if waiting_for_response:
-        waiting_for_response = False
+        
+        if (message.content == 'quit'):
+            await message.channel.send('Previous command has been terminated.')
+            waiting_for_response = False
+            return
         
         # random number game
         if (random_number_game):
@@ -91,11 +110,10 @@ async def on_message(message):
                 if message.content == str(number):
                     await message.channel.send(f'You guessed the right number! You got it in {attempts} attempts. Good job!')
                     await message.channel.send('Up for a challenge? Do $randomnumberhard to play a harder version of this game.')
+                    waiting_for_response = False
                     random_number_game = False
-                    return
                 else:
                     await message.channel.send(f'You guessed wrong! {message.content} is {'greater' if int(message.content) > number else 'less'} than the correct number.') 
-            waiting_for_response = True 
             
         # hard random number game
         if (random_number_game_hard):
@@ -107,7 +125,6 @@ async def on_message(message):
             
             if (not message.content.isdigit() or int(message.content) < 1 or int(message.content) > 37):
                 await message.channel.send('Please enter a valid number.')
-            
             else:
                 attempts += 1
                 if int(message.content) in number_list:
@@ -115,51 +132,35 @@ async def on_message(message):
                     await message.channel.send(f'You guessed one of the numbers! Good job!')
                 
                 # -- start branch -- #
-                if (len(number_list) == 0):
-                    await message.channel.send(f'You have excavated all the numbers in the list! You did it in {attempts} attempts! Good job!')
-                    random_number_game_hard = False
-                    return
-                else:    
+                if (len(number_list) != 0):
                     result = list(map(lambda x: 'higher' if int(message.content) - x > 0 else 'lower', number_list))
                     if (attempts % 5 == 0):
                         number_list.append(random.randint(1, 37)) 
-                    await message.channel.send(f'Your guess is {result} than each number in the list. {'Another number has been added to the list.' if attempts % 5 == 0 else ''}')
-                # -- end branch -- #     
-                await message.channel.send(f'{len(number_list)} more numbers to guess!')
-            
-            waiting_for_response = True
+                    await message.channel.send(f'Your guess is {result} than each number in the list. {'Another number has been added to the list.' if attempts % 5 == 0 else ''}') 
+                    await message.channel.send(f'{len(number_list)} more numbers to guess!')
+                else:    
+                    await message.channel.send(f'You have excavated all the numbers in the list! You did it in {attempts} attempts! Good job!')
+                    random_number_game_hard = False
+                    waiting_for_response = False
+                # -- end branch -- #   
             
         # playlist link request
-        elif (playlist_url):
-            if (not(message.content.startswith('https://open.spotify.com/playlist/'))):
-                await message.channel.send("Invalid playlist URL")
-                return
-            playlist_id = message.content.split('playlist/')[1].split('?')[0]
-            async with message.channel.typing():
-                try:
-                    song_list = extract_songs(playlist_id)
-        
-                    if (len(song_list) == 0):
-                        await message.channel.send("No songs found in the playlist")
-                        return
-                    
-                    random_track = random.choice(song_list)
-                    track_url = random_track['external_urls']['spotify']
-                    
-                    await message.channel.send(f"Here's a random song from your playlist: {track_url} (do $next to get another song)")
-                except Exception as e:
-                    await message.channel.send(f"An error occurred: {e}")
-            # TODO: allow user to choose another song from playlist by typing "next"
+        elif (global_playlist_url):
+            if (message.content == 'next'):
+                async with message.channel.typing():
+                    await message.channel.send(f'Here\'s another random song from your playlist: {get_random_song(global_playlist_url)}')
+            else:
+                waiting_for_response = False
         
     # random number game
     if message.content == '$randomnumber':
-        await message.channel.send('guess a random number between 1 and 37')
+        await message.channel.send('guess a random number between 1 and 37! (type \'quit\' to stop playing)')
         waiting_for_response = True
         random_number_game = True
         
     # random number hard game
     if message.content == '$randomnumberhard':
-        await message.channel.send('i have 5 random numbers. every 5 guesses, another number will be added to the list. start by typing a number between 1 to 37!')
+        await message.channel.send('i have 5 random numbers. every 5 guesses, another number will be added to the list. start by typing a number between 1 to 37! (type \'quit\' to stop playing)')
         waiting_for_response = True
         random_number_game_hard = True
         
@@ -204,10 +205,26 @@ async def on_message(message):
             await message.channel.send(f"An error occurred: {e}")
             
     # sends a random song on a provided playlist on Spotify
-    if message.content == '$playlist':
-        await message.channel.send("Please provide a playlist URL")
-        waiting_for_response = True
-        playlist_url = True
+    if message.content.startswith('$playlist'): 
+        link = message.content.split('$playlist')[1].strip()
+        # checks if proper URL is provided
+        if (link == ''): # if user does not include URL
+            await message.channel.send("Proper syntax: $playlist <URL of Spotify playlist>")
+            return
+        elif (not link.startswith('https://open.spotify.com/playlist/')):
+            await message.channel.send("Invalid playlist URL")
+            return
+            
+
+        playlist_url = link.split('playlist/')[1].split('?')[0]
+        async with message.channel.typing():
+            song_url = get_random_song(playlist_url)
+            if (song_url.startswith('https://open.spotify.com/track/')):
+                await message.channel.send(f'Here is a random song from your playlist: {song_url}. Type "next" for another song from the same playlist.')
+                waiting_for_response = True # see if user wants another song from the same playlist
+                global_playlist_url = playlist_url
+            else: # error handling
+                await message.channel.send(song_url)
         
     # sends a random beatles song on Spotify 
     if message.content == '$beatles':
