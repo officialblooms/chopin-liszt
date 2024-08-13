@@ -1,4 +1,6 @@
 import discord
+from discord.ext import tasks, commands
+from datetime import datetime, time
 import aiohttp
 import os
 import google.generativeai as genai
@@ -11,11 +13,13 @@ import random
 # sets up Discord client 
 client = discord.Client(intents=discord.Intents.all())
 
+BOT_CHANNEL_ID = 1253813298235834431
+
+# sets up Gemini and image search
 
 with open('googlecloudkey.txt', 'r') as file:
     GOOGLE_CLOUD_KEY = file.read()
     
-# sets up Gemini
 genai.configure(api_key=GOOGLE_CLOUD_KEY)
 model = genai.GenerativeModel('models/gemini-pro')
 
@@ -25,11 +29,17 @@ youtube = build('youtube', 'v3', developerKey=GOOGLE_CLOUD_KEY)
 # sets up Spotify API
 
 SPOTIFY_CLIENT_ID = '571cdd92da0446afbcad9a37d80edbf7'
+BEATLES_PLAYLIST_ID = '0rWlHb2uqgRv6bTXEiFcZY'
 
 with open('spotifysecret.txt', 'r') as file:
     SPOTIFY_CLIENT_SECRET = file.read()
 
 spotify = spotipy.Spotify(auth_manager=SpotifyClientCredentials(client_id=SPOTIFY_CLIENT_ID, client_secret=SPOTIFY_CLIENT_SECRET))   
+
+# imports composer list
+
+with open('goodcomposers.txt', 'r') as file:
+    composers = file.readlines()
 
 # get a random song's URL from a given playlist
 def get_random_song(playlist_id):
@@ -55,17 +65,20 @@ def extract_songs(playlist_id, offset=0):
         song_list.extend(extract_songs(playlist_id, offset + 100))
     return song_list
 
-@client.event
-async def on_ready():
-    
-    print('We have logged in as {0.user}'.format(client))
+# gemini response function
+def get_gemini_response(prompt):
+    try:
+        response = model.generate_content(prompt).text
+    except Exception as e:
+        response = f"An error occurred: {e}"
+    return response
 
 waiting_for_response = False
-attempts = 0
 
 # --random number game vars--
 random_number_game = False
 number = 0
+attempts = 0
 
 # --hard random number game vars--
 random_number_game_hard = False
@@ -74,6 +87,11 @@ number_list = [0, 0, 0, 0, 0]
 # --spotify playlist vars--
 global_playlist_url = ''
 
+@client.event
+async def on_ready():
+    print('We have logged in as {0.user}'.format(client))
+    send_daily_message.start()
+    
 @client.event
 async def on_message(message):
     
@@ -160,7 +178,10 @@ async def on_message(message):
         
     # random number hard game
     if message.content == '$randomnumberhard':
-        await message.channel.send('i have 5 random numbers. every 5 guesses, another number will be added to the list. start by typing a number between 1 to 37! (type \'quit\' to stop playing)')
+        await message.channel.send("""
+                                   i have 5 random numbers. every 5 guesses, another number will be added to the 
+                                   list. start by typing a number between 1 to 37! (type \'quit\' to stop playing)
+                                   """)
         waiting_for_response = True
         random_number_game_hard = True
         
@@ -178,13 +199,12 @@ async def on_message(message):
             try: 
                 response = model.generate_content([
                     "Tell me what the " + rand_car_model + " is and its capabilites in no more than 4 sentences.",
-                ])
-                answer = response.text
+                ]).text
             except Exception as e:
-                answer = f"Something went wrong with the request: {e}"
+                response = f"Something went wrong with the request: {e}"
         
         
-        await message.channel.send(answer)
+        await message.channel.send(response)
         
     # searches for a random OfficialBlooms youtube video
     if message.content.lower().__contains__('officialblooms') or message.content.lower().__contains__('blooms'):
@@ -230,10 +250,7 @@ async def on_message(message):
     if message.content == '$beatles':
         async with message.channel.typing():
             try:
-                song_list = extract_songs('0rWlHb2uqgRv6bTXEiFcZY')
-                random_track = random.choice(song_list)
-                track_url = random_track['external_urls']['spotify']
-                
+                track_url = get_random_song(BEATLES_PLAYLIST_ID)
                 await message.channel.send(f"Here's a random song from Beatles: {track_url}")
             except Exception as e:
                 await message.channel.send(f"An error occurred: {e}") 
@@ -244,21 +261,26 @@ async def on_message(message):
             async with session.get('https://api.thecatapi.com/v1/images/search') as resp:
                 data = await resp.json()
                 await message.channel.send(data[0]['url'])
-                
-    # gemini test response
-    if message.content == '$gemini':
-        prompt = message.content[len('$gemini'):].strip()
-        
-        # Send a typing indicator while processing the request
-        async with message.channel.typing():
-            try:
-                response = model.generate_content(prompt)
-                answer = response.text
-            except Exception as e:
-                answer = f"An error occurred: {e}"
-        
-        # Send the response back to the Discord channel
-        await message.channel.send(answer)
+
+@tasks.loop(time=time(16, 0)) # 4:00PM UTC, 9:00AM PST
+async def send_daily_message():
     
+    # random beatles song and fact
+    song_list = extract_songs(BEATLES_PLAYLIST_ID)
+    beatles_song = random.choice(song_list)
+    song_url = beatles_song['external_urls']['spotify']
+    beatles_fact = get_gemini_response("Provide a brief history about the making of " + beatles_song['name'] + " by the Beatles. Do not give me facts about the remastered version.")
+    
+    # gets facts about random composer
+    random_composer = random.choice(composers).strip()
+    composer_fact = get_gemini_response("Give me a brief explanation on the life and musical contributions of " + random_composer + ". Provide a famous piece they composed.")
+    
+    # send the thing
+    channel = client.get_channel(BOT_CHANNEL_ID)
+    if channel:
+        await channel.send(f"Here is your daily Beatles song to listen: {song_url}. {beatles_fact}\n\n")
+        await channel.send(f"Your daily musical composer for today is {random_composer}. \n{composer_fact}")
+        
+
 with open('bottoken.txt', 'r') as file:
     client.run(file.read())
